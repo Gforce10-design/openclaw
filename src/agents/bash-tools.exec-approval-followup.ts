@@ -2,6 +2,7 @@ import {
   resolveExternalBestEffortDeliveryTarget,
   type ExternalBestEffortDeliveryTarget,
 } from "../infra/outbound/best-effort-delivery.js";
+import { buildHermesArbiterMetadata } from "../infra/outbound/hermes-arbiter-metadata.js";
 import { sendMessage } from "../infra/outbound/message.js";
 import { isCronSessionKey, isSubagentSessionKey } from "../sessions/session-key-utils.js";
 import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
@@ -13,6 +14,9 @@ import {
 } from "./exec-approval-result.js";
 import { sanitizeUserFacingText } from "./pi-embedded-helpers/sanitize-user-facing-text.js";
 import { callGatewayTool } from "./tools/gateway.js";
+
+const HERMES_ARBITER_EXEC_TOPIC = "dev-iox";
+const HERMES_ARBITER_EXEC_BOT_NAME = "AHC_A8_bot";
 
 type ExecApprovalFollowupParams = {
   approvalId: string;
@@ -124,6 +128,29 @@ function canDirectSendDeniedFollowup(sessionError: unknown): boolean {
   return sessionError !== null;
 }
 
+function buildExecApprovalHermesArbiterMetadata(params: {
+  approvalId: string;
+  idempotencyKey: string;
+  deliveryTarget: ExternalBestEffortDeliveryTarget;
+}) {
+  const targetChatId = params.deliveryTarget.to?.trim();
+  if (!targetChatId) {
+    return undefined;
+  }
+  return buildHermesArbiterMetadata({
+    topic: HERMES_ARBITER_EXEC_TOPIC,
+    botName: HERMES_ARBITER_EXEC_BOT_NAME,
+    actionType: "status",
+    traceId: `openclaw:exec_approval_followup:${params.approvalId}`,
+    idempotencyKey: params.idempotencyKey,
+    extra: {
+      arbiter_approval_id: params.approvalId,
+      arbiter_event_kind: "exec_approval_followup",
+      arbiter_target_chat_id: targetChatId,
+    },
+  });
+}
+
 function buildAgentFollowupArgs(params: {
   approvalId: string;
   sessionKey: string;
@@ -174,6 +201,7 @@ async function sendDirectFollowupFallback(params: {
   }
 
   const prefix = params.sessionError ? buildSessionResumeFallbackPrefix() : "";
+  const idempotencyKey = `exec-approval-followup:${params.approvalId}`;
   await sendMessage({
     channel: params.deliveryTarget.channel,
     to: params.deliveryTarget.to ?? "",
@@ -181,7 +209,12 @@ async function sendDirectFollowupFallback(params: {
     threadId: params.deliveryTarget.threadId,
     content: `${prefix}${directText}`,
     agentId: undefined,
-    idempotencyKey: `exec-approval-followup:${params.approvalId}`,
+    idempotencyKey,
+    hermesArbiter: buildExecApprovalHermesArbiterMetadata({
+      approvalId: params.approvalId,
+      idempotencyKey,
+      deliveryTarget: params.deliveryTarget,
+    }),
   });
   return true;
 }

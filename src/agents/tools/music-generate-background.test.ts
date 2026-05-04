@@ -118,6 +118,7 @@ describe("music generate background helpers", () => {
       threadId: "thread-1",
       content: "Generated 1 track.",
       mediaUrls: ["/tmp/generated-night-drive.mp3"],
+      arbiterEventKind: "media_generation",
     });
     expect(announceDeliveryMocks.deliverSubagentAnnouncement).not.toHaveBeenCalled();
   });

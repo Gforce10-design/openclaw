@@ -3,6 +3,7 @@ import { parseReplyDirectives } from "../../auto-reply/reply/reply-directives.js
 import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { buildHermesArbiterMetadata } from "../../infra/outbound/hermes-arbiter-metadata.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
 import {
@@ -18,6 +19,8 @@ import { formatAgentInternalEventsForPrompt, type AgentInternalEvent } from "../
 import { deliverSubagentAnnouncement } from "../subagent-announce-delivery.js";
 
 const log = createSubsystemLogger("agents/tools/media-generate-background-shared");
+const HERMES_ARBITER_MEDIA_TOPIC = "dev-iox";
+const HERMES_ARBITER_MEDIA_BOT_NAME = "AHC_A8_bot";
 
 export type MediaGenerationTaskHandle = {
   taskId: string;
@@ -202,6 +205,28 @@ function isAsyncMediaDirectSendEnabled(config: OpenClawConfig | undefined): bool
   return config?.tools?.media?.asyncCompletion?.directSend === true;
 }
 
+function buildMediaGenerationHermesArbiterMetadata(params: {
+  handle: MediaGenerationTaskHandle;
+  idempotencyKey: string;
+  targetChatId: string;
+}) {
+  const runId = params.handle.runId.trim();
+  return buildHermesArbiterMetadata({
+    topic: HERMES_ARBITER_MEDIA_TOPIC,
+    botName: HERMES_ARBITER_MEDIA_BOT_NAME,
+    actionType: "status",
+    traceId: `openclaw:media_generation:${params.handle.taskId}:${runId || "no-run"}`,
+    idempotencyKey: params.idempotencyKey,
+    extra: {
+      arbiter_task_id: params.handle.taskId,
+      ...(runId ? { arbiter_run_id: runId } : {}),
+      arbiter_runtime: "cli",
+      arbiter_event_kind: "media_generation",
+      arbiter_target_chat_id: params.targetChatId,
+    },
+  });
+}
+
 async function maybeDeliverMediaGenerationResultDirectly(params: {
   handle: MediaGenerationTaskHandle;
   status: "ok" | "error";
@@ -231,6 +256,11 @@ async function maybeDeliverMediaGenerationResultDirectly(params: {
     ...(mediaUrls?.length ? { mediaUrls } : {}),
     agentId: requesterAgentId,
     idempotencyKey: params.idempotencyKey,
+    hermesArbiter: buildMediaGenerationHermesArbiterMetadata({
+      handle: params.handle,
+      idempotencyKey: params.idempotencyKey,
+      targetChatId: to,
+    }),
     mirror: {
       sessionKey: params.handle.requesterSessionKey,
       agentId: requesterAgentId,

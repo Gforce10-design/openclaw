@@ -118,6 +118,7 @@ describe("video generate background helpers", () => {
       threadId: "thread-1",
       content: "Generated 1 video.",
       mediaUrls: ["/tmp/generated-lobster.mp4"],
+      arbiterEventKind: "media_generation",
     });
     expect(announceDeliveryMocks.deliverSubagentAnnouncement).not.toHaveBeenCalled();
   });

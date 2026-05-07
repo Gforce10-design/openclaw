@@ -1,4 +1,7 @@
-import { hasAnyAuthProfileStoreSource } from "../../agents/auth-profiles/source-check.js";
+import {
+  hasAnyAuthProfileStoreSource,
+  hasEmptyAuthProfileStoreFile,
+} from "../../agents/auth-profiles/source-check.js";
 import { retireSessionMcpRuntime } from "../../agents/pi-bundle-mcp-tools.js";
 import type { MessagingToolSend } from "../../agents/pi-embedded-messaging.types.js";
 import type { SkillSnapshot } from "../../agents/skills.js";
@@ -725,6 +728,22 @@ async function prepareCronRunContext(params: {
   const hasSessionAuthProfileOverride = Boolean(
     cronSession.sessionEntry.authProfileOverride?.trim(),
   );
+  if (!hasSessionAuthProfileOverride && hasEmptyAuthProfileStoreFile(agentDir)) {
+    const reason = `disabled due to missing auth: ${provider}/${model} has an empty auth-profiles.json store for agent '${agentId}'`;
+    logWarn(`[cron:${input.job.id}] ${reason}`);
+    return {
+      ok: false,
+      result: withRunSession({
+        status: "skipped",
+        error: reason,
+        diagnostics: createCronRunDiagnosticsFromError("auth-preflight", reason, {
+          severity: "warn",
+        }),
+        provider,
+        model,
+      }),
+    };
+  }
   const authProfileId =
     !hasSessionAuthProfileOverride &&
     !hasConfiguredAuthProfiles(cfgWithAgentDefaults) &&

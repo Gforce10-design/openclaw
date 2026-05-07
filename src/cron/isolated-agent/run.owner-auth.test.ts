@@ -1,9 +1,12 @@
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../agents/test-helpers/fast-coding-tools.js";
 import {
   loadRunCronIsolatedAgentTurn,
   resetRunCronIsolatedAgentTurnHarness,
   resolveDeliveryTargetMock,
+  resolveSessionAuthProfileOverrideMock,
   runEmbeddedPiAgentMock,
   runWithModelFallbackMock,
 } from "./run.test-harness.js";
@@ -126,6 +129,30 @@ describe("runCronIsolatedAgentTurn owner auth", () => {
       expect(call?.senderIsOwner).toBe(false);
       expect(call?.ownerOnlyToolAllowlist).toBeUndefined();
       expect(call?.toolsAllow).toEqual(["maniple__check_idle_workers"]);
+    },
+  );
+
+  it(
+    "skips autonomous cron agent runs when the agent auth store exists but has no profiles",
+    { timeout: RUN_OWNER_AUTH_TIMEOUT_MS },
+    async () => {
+      fs.mkdirSync("/tmp/agent-dir", { recursive: true });
+      fs.writeFileSync(
+        path.join("/tmp/agent-dir", "auth-profiles.json"),
+        `${JSON.stringify({ version: 1, profiles: {} }, null, 2)}\n`,
+        "utf8",
+      );
+
+      try {
+        const result = await runCronIsolatedAgentTurn(makeParams());
+
+        expect(result.status).toBe("skipped");
+        expect(result.error).toContain("disabled due to missing auth");
+        expect(resolveSessionAuthProfileOverrideMock).not.toHaveBeenCalled();
+        expect(runEmbeddedPiAgentMock).not.toHaveBeenCalled();
+      } finally {
+        fs.rmSync(path.join("/tmp/agent-dir", "auth-profiles.json"), { force: true });
+      }
     },
   );
 });
